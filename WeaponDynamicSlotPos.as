@@ -232,9 +232,9 @@ HookReturnCode WDSP_ClientSay( SayParameters@ pParams )
         // Save the settings immediately after changing them
         SaveSettingsToFile();
         
-        // Return here so the game doesn't process other buy commands
         return HOOK_CONTINUE;
     }
 	
 	return HOOK_CONTINUE;
+
 }
