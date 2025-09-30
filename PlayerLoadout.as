@@ -556,7 +556,7 @@ class PlayerLoadout
     {
         for (int pos = 0; pos < MAX_ITEM_SLOTS_POS; pos++)
         {
-            if (!m_FreePos[slot][pos] && pos != GRAVEYARD_POS_INDEX)
+            if (!m_FreePos[slot][pos])
             {
                 m_FreePos[slot][pos] = true;
                 return pos;
@@ -610,3 +610,4 @@ class PlayerLoadout
         return null;
     }
 }
+
