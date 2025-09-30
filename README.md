@@ -8,6 +8,8 @@
 
 An AngelScript plugin for Sven Co-op servers that dynamically manages weapon HUD slots to prevent overlap and ensure all weapons are selectable, especially on maps with a large number of custom weapons.
 
+![hud_behavior_1](https://github.com/user-attachments/assets/63871232-0543-4f24-9392-acbe54be7ee6)
+
 ---
 
 ## Table of Contents
@@ -121,5 +123,6 @@ Feel free to fork this repository, make improvements, and submit a pull request.
 
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
 
 
