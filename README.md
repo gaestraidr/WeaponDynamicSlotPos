@@ -60,6 +60,7 @@ It also introduces a "Graveyard Slot" — a hidden, off-screen position. All wea
     Open the `default_plugins.txt` file located in `.../svencoop`. Add the following entry to the `"plugins"` list:
 
     ```json
+    "plugin"
     {
         "name": "WeaponDynamicSlotPos",
         "script": "WeaponDynamicSlotPos/WeaponDynamicSlotPos"
@@ -119,3 +120,4 @@ Feel free to fork this repository, make improvements, and submit a pull request.
 
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
