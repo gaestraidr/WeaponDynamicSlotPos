@@ -62,18 +62,7 @@ It also introduces a "Graveyard Slot" — a hidden, off-screen position. All wea
     ```json
     {
         "name": "WeaponDynamicSlotPos",
-        "script": "WeaponDynamicSlotPos\"
-    }
-    ```
-    Your `plugins.json` might look something like this:
-    ```json
-    {
-        "plugins": [
-            {
-                "name": "WeaponDynamicSlotPos",
-                "script": "WeaponDynamicSlotPos.as"
-            }
-        ]
+        "script": "WeaponDynamicSlotPos/WeaponDynamicSlotPos"
     }
     ```
 
@@ -127,5 +116,6 @@ The source code is organized into three logical parts:
 Feel free to fork this repository, make improvements, and submit a pull request. Suggestions for new features or bug fixes are welcome via the issue tracker.
 
 ## License
+
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
