@@ -64,10 +64,10 @@ It also introduces a "Graveyard Slot" — a hidden, off-screen position. All wea
 
     ```json
     "plugin"
-    {
-        "name": "WeaponDynamicSlotPos",
-        "script": "WeaponDynamicSlotPos/WeaponDynamicSlotPos"
-    }
+	{
+		"name"          "WeaponDynamicSlotPos"
+		"script"        "WeaponDynamicSlotPos/WeaponDynamicSlotPos"
+	}
     ```
 
 3.  **Restart the Server:**
@@ -123,6 +123,7 @@ Feel free to fork this repository, make improvements, and submit a pull request.
 
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
 
 
 
