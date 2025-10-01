@@ -27,7 +27,8 @@ An AngelScript plugin for Sven Co-op servers that dynamically manages weapon HUD
 
 ## The Problem
 
-The default Sven Co-op weapon HUD has a fundamental limitation: each weapon "bucket" (slot 1, slot 2, etc.) has a fixed number of positions to display weapon icons. When a map features more weapons in a single bucket with conflicted positions, the icons begin to overlap and sometimes hidden.
+The default Sven Co-op weapon HUD has a fundamental limitation: each weapon "bucket" (slot 1, slot 2, etc.) has a fixed number of positions to display weapon icons. When a map features more weapons in a single bucket with conflicted positions, the icons begin to overlap and sometimes hidden. 
+(Yes, it include vanilla weapon, custom weapon with AS, or AMX or whatever because you guys keep asking me. It's all weapon active on the game.)
 
 This causes two major issues:
 1.  **Visual Clutter:** The HUD becomes messy and unreadable.
@@ -123,6 +124,7 @@ Feel free to fork this repository, make improvements, and submit a pull request.
 
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
 
 
 
