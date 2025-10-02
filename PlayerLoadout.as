@@ -465,7 +465,7 @@ class PlayerLoadout
                 if (p is null || !p.IsConnected() || p.edict() is null)
                     continue;
 
-                if (p.entindex() == m_pPlayer.entindex() || int(g_PlayerHUDSettings[PlayerID(p)]) == 2)
+                if (p.entindex() == m_pPlayer.entindex() || HUDMODE(int(g_PlayerHUDSettings[PlayerID(p)])) == HUD_ABC_ENCHANCE)
                     continue;
                 
                 NetworkMessage msg(MSG_ONE, NetworkMessages::WeaponList, p.edict());
@@ -610,4 +610,5 @@ class PlayerLoadout
         return null;
     }
 }
+
 
