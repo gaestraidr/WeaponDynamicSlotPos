@@ -8,6 +8,9 @@
 
 An AngelScript plugin for Sven Co-op servers that dynamically on runtime game session manages weapon HUD slots to prevent overlap and ensure all weapons are selectable by ignoring `iPosition` completely, especially on maps with a large number of custom weapons.
 (Yes, it include vanilla weapon, custom weapon with AS, or AMX or whatever they came from. It's all weapon active on the game.)
+
+**!UPDATE NOTE!**: Since unfortunately scanning thru registered custom weapon from plugin cannot be done by scanning the map, please try to pickup all the custom weapon plugin once, and the plugin will store them permanently on persistent storage in file. You only need to do this once in lifetime! 
+
 ![hud_behavior_1](https://github.com/user-attachments/assets/63871232-0543-4f24-9392-acbe54be7ee6)
 
 ---
@@ -50,7 +53,7 @@ It also introduces a "Graveyard Slot" — a hidden, off-screen position. All wea
 -   **Full Weapon Selectability:** Ensures every weapon a player carries can be selected.
 -   **HUD Mod Compatibility:** Allows players to choose their HUD mode (`!togglehudslot`) to support both the standard game HUD and popular client-side HUD modifications like **ABCEnchance (MetaHook)**.
 -   **Automatic Weapon Discovery:** Scans the map for all weapon entities and maintains a master list to keep player HUDs clean.
--   **Persistent Player Settings:** Remembers each player's chosen HUD mode across sessions and map changes.
+-   **Persistent Player Settings & Weapon List:** Remembers each player's chosen HUD mode & discovered weapon list across sessions and map changes.
 -   **Lightweight & Server-Side:** No client-side downloads or modifications are required for players using the vanilla HUD.
 
 ## Installation
@@ -123,6 +126,7 @@ Feel free to fork this repository, make improvements, and submit a pull request.
 
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+
 
 
 
