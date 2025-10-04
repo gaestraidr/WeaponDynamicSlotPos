@@ -9,12 +9,16 @@ void PluginInit()
 	g_Hooks.RegisterHook( Hooks::Player::ClientConnected, @WDSP_ClientConnected );
 	g_Hooks.RegisterHook( Hooks::Player::ClientPutInServer, @WDSP_ClientPutInServer );
 	g_Hooks.RegisterHook( Hooks::PickupObject::CanCollect, @WDSP_CanCollect );
+	g_Hooks.RegisterHook( Hooks::Game::MapChange, @WDSP_MapChange );
 
 	g_Hooks.RegisterHook( Hooks::Player::PlayerRevived, @WDSP_PlayerRevived );
 	g_Hooks.RegisterHook( Hooks::Player::PlayerPostThink, @WDSP_PlayerPostThink );
 	g_Hooks.RegisterHook( Hooks::Player::ClientSay, @WDSP_ClientSay );
 
     LoadSettingsFromFile();
+    LoadWeaponListFromFile();
+	g_WeaponKnownItemList = GetRegisteredEntries();
+	lastSizeChange = g_WeaponKnownItemList.length();
 
     g_EngineFuncs.ServerPrint("[WDSP] Running!\n");
 }
@@ -22,15 +26,40 @@ void PluginInit()
 dictionary g_PlayerLoadouts;
 dictionary g_PlayerHUDSettings;
 array<string> g_WeaponKnownItemList;
+uint lastSizeChange = 0;
 
 void MapInit()
 {
-    g_EngineFuncs.ServerPrint("[WDSP] Resetting entry list...\n");
-    g_WeaponKnownItemList.removeRange(0, g_WeaponKnownItemList.length());
-    g_WeaponKnownItemList = GetRegisteredEntries(true);
+    g_Scheduler.SetTimeout("ScanMapEntityWeapon", 1.0f);
+}
+
+void ScanMapEntityWeapon()
+{
+	g_EngineFuncs.ServerPrint("[WDSP] Scanning map for entry list...\n");
+	array<string> allMapEntities = GetAllWeaponEntitiesInMap();
+    for (uint i = 0; i < allMapEntities.length(); i++) 
+    {
+        string weaponName = allMapEntities[i];
+        if (g_WeaponKnownItemList.find(weaponName) < 0)
+        {
+            g_EngineFuncs.ServerPrint("[WDSP] Discovered: " + weaponName + "\n");
+            g_WeaponKnownItemList.insertLast(weaponName);
+        }
+    }
 }
 
 // --- GAME ENGINE HOOKS ---
+
+HookReturnCode WDSP_MapChange( const string& in szNextMap )
+{
+	if (g_WeaponKnownItemList.length() != lastSizeChange) {
+		g_EngineFuncs.ServerPrint("[WDSP] Storing weapon entry list...\n");
+		g_WeaponKnownItemList.sortAsc();
+		lastSizeChange = g_WeaponKnownItemList.length();
+		SaveWeaponListToFile(g_WeaponKnownItemList);
+	}
+	return HOOK_CONTINUE;
+}
 
 HookReturnCode WDSP_ClientConnected( edict_t@ pEdict, const string& in szPlayerName, const string& in szIPAddress, bool& out bDisallowJoin, string& out szRejectReason )
 {
@@ -232,9 +261,9 @@ HookReturnCode WDSP_ClientSay( SayParameters@ pParams )
         // Save the settings immediately after changing them
         SaveSettingsToFile();
         
+        // Return here so the game doesn't process other buy commands
         return HOOK_CONTINUE;
     }
 	
 	return HOOK_CONTINUE;
-
 }

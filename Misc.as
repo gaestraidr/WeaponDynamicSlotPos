@@ -1,90 +1,8 @@
-
-array<string> g_AllKnownWeaponEntitiesRegistered;
-array<array<string>> g_AllKnownWeaponEntitiesRegisteredSlotted;
-
-array<string> GetRegisteredEntries(bool reset = false)
+array<string> GetRegisteredEntries()
 {
-    // First run, we process the duplicate entries
-    if (g_AllKnownWeaponEntitiesRegistered.length() == 0 || reset) 
-    {
-        RegenerateRegisteredList();
-    }
-
-    return g_AllKnownWeaponEntitiesRegistered;
+    return g_AllKnownWeaponEntitiesStored;
 }
 
-array<array<string>> GetRegisteredSlottedEntries(bool reset = false)
-{
-    // First run, we process the duplicate entries
-    if (g_AllKnownWeaponEntitiesRegisteredSlotted.length() == 0 || reset) 
-    {
-        RegenerateRegisteredList();
-    }
-
-    return g_AllKnownWeaponEntitiesRegisteredSlotted;
-}
-
-void RegenerateRegisteredList()
-{
-    // Clear the list first if its reset
-    g_AllKnownWeaponEntitiesRegistered.removeRange(0, g_AllKnownWeaponEntitiesRegistered.length());
-    g_AllKnownWeaponEntitiesRegisteredSlotted.removeRange(0, g_AllKnownWeaponEntitiesRegisteredSlotted.length());
-    g_AllKnownWeaponEntitiesRegisteredSlotted.resize(MAX_ITEM_TYPES);
-
-    array<string> filteredList = GetFilteredDuplicate();
-    for (uint i = 0; i < filteredList.length(); i++) 
-    {
-        string weaponName = filteredList[i];
-        ItemInfo II;
-        if (GetItemInfoByName(weaponName, II)) {
-            g_AllKnownWeaponEntitiesRegistered.insertLast(weaponName);
-            g_AllKnownWeaponEntitiesRegisteredSlotted[II.iSlot].insertLast(weaponName);
-        }
-    }
-
-    // To make the data much easier to work with and debug later.
-    g_AllKnownWeaponEntitiesRegistered.sortAsc();
-}
-
-array<string> GetFilteredDuplicate()
-{
-    array<string> allKnownWeaponEntitiesFiltered;
-
-    // Using dictionary for extremely fast lookups to track what already added.
-    dictionary seenItems;
-    for (uint i = 0; i < g_AllKnownWeaponEntities.length(); i++) 
-    {
-        string weaponName = g_AllKnownWeaponEntities[i];
-        if (!seenItems.exists(weaponName))
-        {
-            // If it doesn't exist, it's the first time seen this name.
-            // Add it to the clean, filtered list.
-            allKnownWeaponEntitiesFiltered.insertLast(weaponName);
-            seenItems[weaponName] = true;
-        }
-    }
-
-    array<string> allMapEntities = GetAllWeaponEntitiesInMap();
-    for (uint i = 0; i < allMapEntities.length(); i++) 
-    {
-        string weaponName = allMapEntities[i];
-        if (!seenItems.exists(weaponName))
-        {
-            // If it doesn't exist, it's the first time seen this name.
-            // Add it to the clean, filtered list.
-            allKnownWeaponEntitiesFiltered.insertLast(weaponName);
-            seenItems[weaponName] = true;
-        }
-    }
-
-    // To make the data much easier to work with and debug later.
-    allKnownWeaponEntitiesFiltered.sortAsc();
-
-    return allKnownWeaponEntitiesFiltered;
-}
-
-// Iterates through all active entities on the server and returns an array
-// containing every entity whose classname begins with "weapon_".
 array<string> GetAllWeaponEntitiesInMap()
 {
     // Create an empty array to store our results.
@@ -115,8 +33,9 @@ array<string> GetAllWeaponEntitiesInMap()
         
         // Make sure its really a player item
         CBasePlayerItem@ pItem = cast<CBasePlayerItem@>(pEntity);
-        if (pItem !is null)
+        if (pItem !is null) {
             weaponEntities.insertLast(szName);
+        }
     }
 
     CBaseEntity@ ent = null;
@@ -126,18 +45,91 @@ array<string> GetAllWeaponEntitiesInMap()
 
         // Make sure its really a player item
         CBasePlayerItem@ pItem = cast<CBasePlayerItem@>(ent);
-        if (pItem !is null)
+        if (pItem !is null) {
             weaponEntities.insertLast(szName);
+        }
     }
 
     // Return the completed list of weapon entities.
     return weaponEntities;
 }
 
+array<string> g_AllKnownWeaponEntitiesStored;
+
+const string WEAPON_LIST_FILENAME = "scripts/plugins/store/weapon_stored_list.txt"; 
+void SaveWeaponListToFile(array<string> arListWeapon)
+{
+	File@ f = g_FileSystem.OpenFile(WEAPON_LIST_FILENAME, OpenFile::WRITE);
+	if (f is null)
+	{
+		g_EngineFuncs.ServerPrint("[WDSP] Could not open " + WEAPON_LIST_FILENAME + " for writing!\n");
+		return;
+	}
+
+	for (uint i = 0; i < arListWeapon.length(); i++)
+	{
+		// Write the line
+		f.Write(arListWeapon[i] + "\n");
+	}
+
+	f.Close();
+}
+
+void LoadWeaponListFromFile()
+{
+	File@ f = g_FileSystem.OpenFile(WEAPON_LIST_FILENAME, OpenFile::READ);
+	if (f is null)
+	{
+		g_EngineFuncs.ServerPrint("[WDSP] Weapon file not found. A new one will be created.\n");
+		g_AllKnownWeaponEntitiesStored = GetFilteredDuplicate();
+        SaveWeaponListToFile(g_AllKnownWeaponEntitiesStored);
+	}
+    else {
+        while (!f.EOFReached())
+        {
+            string line = "";
+            f.ReadLine(line);
+            if (line.Length() == 0) continue;
+
+            g_AllKnownWeaponEntitiesStored.insertLast(line);
+        }
+
+        f.Close();
+    }
+	
+}
+
+array<string> GetFilteredDuplicate()
+{
+    array<string> allKnownWeaponEntitiesFiltered;
+
+    // Using dictionary for extremely fast lookups to track what already added.
+    dictionary seenItems;
+    for (uint i = 0; i < g_AllKnownWeaponEntitiesTyped.length(); i++) 
+    {
+        string weaponName = g_AllKnownWeaponEntitiesTyped[i];
+        if (!seenItems.exists(weaponName))
+        {
+            // If it doesn't exist, it's the first time seen this name.
+            // Add it to the clean, filtered list.
+            allKnownWeaponEntitiesFiltered.insertLast(weaponName);
+            seenItems[weaponName] = true;
+        }
+    }
+
+    // To make the data much easier to work with and debug later.
+    allKnownWeaponEntitiesFiltered.sortAsc();
+
+    return allKnownWeaponEntitiesFiltered;
+}
+
 // Every weapon I could type manually, fell free to add some more yourself, don't worry about duplicating the entries
 // You actually dont need to put anything new in here, aside of SCHL/OF weapon where the register is resided on the client.
 // Since the plugin do auto-discovery if a player pickup a weapon thats not on the list, since custom weapon is never pre-registered in client
-const array<string> g_AllKnownWeaponEntities = {
+//
+// NOTE: If you add a new name into this list, you need to the file "scripts/plugins/store/weapon_stored_list.txt" first, since it wont load this
+//       after creating the file once.
+const array<string> g_AllKnownWeaponEntitiesTyped = {
     // --- Half-Life 1 & Sven Co-op Weapons ---
     "weapon_9mmAR",
     "weapon_9mmhandgun",
