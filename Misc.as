@@ -117,9 +117,6 @@ array<string> GetFilteredDuplicate()
         }
     }
 
-    // To make the data much easier to work with and debug later.
-    allKnownWeaponEntitiesFiltered.sortAsc();
-
     return allKnownWeaponEntitiesFiltered;
 }
 

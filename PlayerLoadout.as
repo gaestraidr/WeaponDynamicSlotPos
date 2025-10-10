@@ -157,10 +157,12 @@ class PlayerLoadout
 
     bool m_NewlyCreated = true;
 
-    bool m_pGraveyardSent = false;
+    dictionary m_PickupCache;
+    int m_SnapshotCalledCount = 0;
     bool m_ReadyState = false;
     bool m_InitRefreshed = false;
     bool m_HasRefreshed = false;
+    float m_NextCacheCleanUp = 0.0f;
 
     // === GET SETTER ===
     // Gets the player associated with this object.
@@ -309,6 +311,8 @@ class PlayerLoadout
         m_TempWeaponKeys.removeRange(0, m_TempWeaponKeys.length());
     }
 
+    void CleanCachePickup() { m_PickupCache.deleteAll(); m_NextCacheCleanUp = g_Engine.time + 0.25f; }
+    bool WasInCachePickup(const string &in szWeapName) { return m_PickupCache.exists(szWeapName); }
     bool HasWeaponQueued() { return m_TempWeaponKeys.length() > 0; }
     void RestoreIterate()
     {
@@ -327,7 +331,6 @@ class PlayerLoadout
                     array<string> parts = packed.Split(",");
                     int slot = atoi(parts[0]);
                     int pos  = atoi(parts[1]);
-                    int posABC  = atoi(parts[2]);
 
                     SendWeaponList(wepName, II, slot, pos + SLOTS_POS_START_INDEX);
                 }
@@ -343,7 +346,18 @@ class PlayerLoadout
         }
     }    
 
-    void ResetSpawnItemList() { m_TempWeaponKeys.removeRange(0, m_TempWeaponKeys.length()); }
+    void ResetState() 
+    { 
+        m_TempWeaponKeys.removeRange(0, m_TempWeaponKeys.length());
+        m_PickupCache.deleteAll();
+
+        m_SnapshotCalledCount = 0;
+        m_ReadyState = false;
+        m_InitRefreshed = false;
+        m_HasRefreshed = false;
+        m_NextCacheCleanUp = 0.0f;
+    }
+
     void Reset(CBasePlayer@ pPlayer)
     {
         if (pPlayer !is null) {
@@ -351,10 +365,7 @@ class PlayerLoadout
             @m_pPlayerEdict = pPlayer.edict();
         }
 
-        m_ReadyState = false;
-		m_InitRefreshed = false;
-		m_HasRefreshed = false;
-
+        ResetState();
         ResetEdict();
     }
 
@@ -369,9 +380,6 @@ class PlayerLoadout
         // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Snapshotting...\n" );
         // snapshot inventory
         dictionary curInv;
-        if (!szForceName.IsEmpty())
-            curInv[szForceName] = true;
-
         for (int i = 0; i < MAX_ITEM_TYPES; i++)
         {
             CBasePlayerItem@ pItem = m_pPlayer.m_rgpPlayerItems(i);
@@ -385,20 +393,36 @@ class PlayerLoadout
             }
         }
 
-        // detect pickups
-        array<string> curKeys = curInv.getKeys();
-        for (uint i = 0; i < curKeys.length(); i++)
-        {
-            if (!m_WeaponPos.exists(curKeys[i]))
-                OnPickup(curKeys[i]);
-        }
+        bool invChanged = false;
 
         // detect drops
         array<string> oldKeys = m_WeaponPos.getKeys();
         for (uint i = 0; i < oldKeys.length(); i++)
         {
-            if (!curInv.exists(oldKeys[i]))
+            if (!curInv.exists(oldKeys[i])) {
                 OnDrop(oldKeys[i]);
+                invChanged = true;
+            }
+        }
+
+        if (!szForceName.IsEmpty()) {
+            m_PickupCache[szForceName] = true;
+            curInv[szForceName] = true;
+        }
+
+        // detect pickups
+        array<string> curKeys = curInv.getKeys();
+        for (uint i = 0; i < curKeys.length(); i++)
+        {
+            if (!m_WeaponPos.exists(curKeys[i])) {
+                OnPickup(curKeys[i]);
+                invChanged = true;
+            }
+        }
+
+        if (invChanged) {
+            m_SnapshotCalledCount++;
+            // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Snapshot Called Count: " + m_SnapshotCalledCount + "\n" );
         }
     }
 
@@ -420,6 +444,32 @@ class PlayerLoadout
             int pos  = atoi(parts[1]);
 
             SendWeaponList(wepName, II, slot, pos + SLOTS_POS_START_INDEX);
+        }
+    }
+
+    void ResetHUDClient()
+    {
+        SendResetHUD();
+        ResendAmmoHUD();
+    }
+
+    void ResendAmmoHUD()
+    {
+        array<string> weapList = m_WeaponPos.getKeys();
+        for (uint i = 0; i < weapList.length(); i++) {
+            if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null)
+                return;
+
+            string wepName = weapList[i];
+
+            ItemInfo II;
+            if (!GetItemInfoByName(wepName, II))
+                continue;
+            
+            int primAmmoI = g_PlayerFuncs.GetAmmoIndex(II.szAmmo1());
+            if (primAmmoI >= 0) SendAmmoHUD(primAmmoI, m_pPlayer.m_rgAmmo(primAmmoI));
+            int secAmmoI = g_PlayerFuncs.GetAmmoIndex(II.szAmmo2());
+            if (secAmmoI >= 0) SendAmmoHUD(secAmmoI, m_pPlayer.m_rgAmmo(secAmmoI));
         }
     }
 
@@ -504,11 +554,17 @@ class PlayerLoadout
         if (!GetItemInfoByName(szName, II))
             return;
 
-        int slot = II.iSlot;
-        int pos = AllocPos(slot);
-        if (pos < 0)
-            // no free position
+        // The preferred slot for this item
+        int preferredSlot = II.iSlot;
+        dictionary newLocation = AllocPos(preferredSlot);
+        if (int(newLocation['pos']) < 0)
+        {
+            // No free position found on every slot, damn this guy saving arsenal for doomsday
             return;
+        }
+
+        int slot = int(newLocation["slot"]);
+        int pos  = int(newLocation["pos"]);
 
         m_WeaponPos[szName] = formatInt(slot) + "," + formatInt(pos);
 
@@ -552,17 +608,41 @@ class PlayerLoadout
         }
     }
 
-    private int AllocPos(int slot)
+    private dictionary AllocPos(int initialSlot)
     {
-        for (int pos = 0; pos < MAX_ITEM_SLOTS_POS; pos++)
+        // Create a dictionary to return both the slot and position.
+        dictionary result;
+
+        // The outer loop iterates through all possible slots exactly once.
+        // We assume MAX_ITEM_TYPES is the total number of weapon slots (e.g., 10 for slots 0-9).
+        for (int i = 0; i < MAX_ITEM_TYPES; i++)
         {
-            if (!m_FreePos[slot][pos] && pos != GRAVEYARD_POS_INDEX)
+            // Calculate the current slot to check using the modulo operator for circular logic.
+            // Example: if initialSlot is 8, the sequence will be 8, 9, 0, 1, 2, ... , 7
+            int currentSlot = (initialSlot + i) % MAX_ITEM_TYPES;
+
+            // The inner loop checks for a free position within the current slot.
+            for (int pos = 0; pos < MAX_ITEM_SLOTS_POS; pos++)
             {
-                m_FreePos[slot][pos] = true;
-                return pos;
+                // If we find a free position...
+                if (!m_FreePos[currentSlot][pos])
+                {
+                    // Mark it as used.
+                    m_FreePos[currentSlot][pos] = true;
+                    result["slot"] = currentSlot;
+                    result["pos"] = pos;
+                    
+                    // Return the result immediately.
+                    return result;
+                }
             }
         }
-        return -1; // no free position
+
+        // If the outer loop completes, it means we have checked every position
+        // in every slot and found nothing. The inventory is completely full.
+        result["slot"] = initialSlot;
+        result["pos"] = -1;
+        return result; // Return pos -1 to signal failure.
     }
 
     private void FreePos(int slot, int pos)
@@ -586,15 +666,42 @@ class PlayerLoadout
         NetworkMessage msg(MSG_ONE, NetworkMessages::WeaponList, m_pPlayerEdict);
             msg.WriteString(szName);
             msg.WriteByte(g_PlayerFuncs.GetAmmoIndex(II.szAmmo1()));
-            // msg.WriteByte(g_PlayerFuncs.GetAmmoIndex(II.szAmmo1()) != -1 ? 1 : -1);
             msg.WriteLong(II.iMaxAmmo1);   // SC uses long
             msg.WriteByte(g_PlayerFuncs.GetAmmoIndex(II.szAmmo2()));
-            // msg.WriteByte(g_PlayerFuncs.GetAmmoIndex(II.szAmmo2()) != -1 ? 1 : -1);
             msg.WriteLong(II.iMaxAmmo2);   // SC uses long
             msg.WriteByte(slot);
             msg.WriteByte(pos);
             msg.WriteShort(II.iId);        // SC uses short
             msg.WriteByte(II.iFlags);
+        msg.End();
+    }
+
+    private void SendResetHUD()
+    {
+        if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null)
+            return;
+
+        if (HUDMODE(int(g_PlayerHUDSettings[PlayerID(m_pPlayer)])) == HUD_ABC_ENCHANCE)
+            return;
+
+        NetworkMessage msg(MSG_ONE, NetworkMessages::ResetHUD, m_pPlayerEdict);
+            msg.WriteByte(0);
+        msg.End();
+    }
+
+    private void SendAmmoHUD(int iAmmoIndex, int iAmount)
+    {
+        if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null)
+            return;
+
+        if (HUDMODE(int(g_PlayerHUDSettings[PlayerID(m_pPlayer)])) == HUD_ABC_ENCHANCE)
+            return;
+
+        NetworkMessage msg(MSG_ONE, NetworkMessages::AmmoX, m_pPlayerEdict);
+            // Ammo index 
+            msg.WriteByte(iAmmoIndex);
+            // Ammo amount
+            msg.WriteLong(iAmount);
         msg.End();
     }
 
