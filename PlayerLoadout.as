@@ -309,6 +309,7 @@ class PlayerLoadout
         }
 
         m_TempWeaponKeys.removeRange(0, m_TempWeaponKeys.length());
+        ResetHUDClient();
     }
 
     void CleanCachePickup() { m_PickupCache.deleteAll(); m_NextCacheCleanUp = g_Engine.time + 0.25f; }
@@ -458,6 +459,9 @@ class PlayerLoadout
         array<string> weapList = m_WeaponPos.getKeys();
         for (uint i = 0; i < weapList.length(); i++) {
             if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null)
+                return;
+
+            if (HUDMODE(int(g_PlayerHUDSettings[PlayerID(m_pPlayer)])) == HUD_ABC_ENCHANCE)
                 return;
 
             string wepName = weapList[i];
