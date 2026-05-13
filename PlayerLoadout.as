@@ -243,9 +243,6 @@ class PlayerLoadout
                 break;
 
             string wepName = wpKeys[i];
-            if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null || g_IsMapChanging)
-                return;
-
             @item = m_pPlayer.HasNamedPlayerItem( wepName );
             if ( item !is null )
                 continue;
