@@ -65,7 +65,7 @@ HookReturnCode WDSP_ClientConnected( edict_t@ pEdict, const string& in szPlayerN
 	string authId = g_EngineFuncs.GetPlayerAuthId( pEdict );
 	PlayerLoadout@ loadout = GetLoadoutByAuthID(authId, null);
 	if (loadout !is null) {
-		loadout.ResetState();
+		loadout.Reset(null);
 	}
 
 	return HOOK_CONTINUE;
@@ -102,6 +102,11 @@ HookReturnCode WDSP_CanCollect( CBaseEntity@ pPickup, CBaseEntity@ pOther, bool&
 	if ((pPickup.pev.spawnflags & SF_ITEM_USE_ONLY) != 0)
 		return HOOK_CONTINUE;
 
+    // Check if its weapon, return early if its not as to not bloat the frame
+	string szName = pPickup.pev.classname;
+    if (!szName.StartsWith("weapon_"))
+		return HOOK_CONTINUE;
+
 	// Make sure it's a player collecting and they're vanilla HUD player
     CBasePlayer@ pPlayer = cast<CBasePlayer@>(pOther);
     if (pPlayer is null || pPlayer.edict() is null 
@@ -112,9 +117,11 @@ HookReturnCode WDSP_CanCollect( CBaseEntity@ pPickup, CBaseEntity@ pOther, bool&
     CBasePlayerWeapon@ pWeapon = cast<CBasePlayerWeapon@>(pPickup);
     if (pWeapon is null)
         return HOOK_CONTINUE;
-	
-	// Get weapon name
-	string szName = pWeapon.pszName();
+
+    // Skip item that uses slot 10 (index 9)
+    ItemInfo pwInfo;
+    if (!pWeapon.GetItemInfo(pwInfo) || pwInfo.iSlot >= 9) 
+        return HOOK_CONTINUE;
 
 	// Make sure loadout is available
 	PlayerLoadout@ loadout = GetLoadout(pPlayer);
@@ -128,20 +135,17 @@ HookReturnCode WDSP_CanCollect( CBaseEntity@ pPickup, CBaseEntity@ pOther, bool&
 	if (!loadout.m_ReadyState)
 		loadout.SetPlayer(pPlayer);
 
-    // Probably won't be needed as we already got CBasePlayerWeapon, just to be sure
-	if (szName.StartsWith("weapon_")) {
-        // Auto discover new weapon being picked up to the list
-		if (g_WeaponKnownItemList.find(szName) < 0) {
-			g_WeaponKnownItemList.insertLast(szName);
-			loadout.ForceSpecificWeaponToPosGraveyard(szName);
-		}
+	// Auto discover new weapon being picked up to the list
+    if (g_WeaponKnownItemList.find(szName) < 0) {
+        g_WeaponKnownItemList.insertLast(szName);
+        loadout.ForceSpecificWeaponToPosGraveyard(szName);
+    }
 
-		loadout.ForceAddWeapon(szName);
-		bResult = loadout.m_ReadyState;
-		if (loadout.m_ReadyState && HUDMODE(int(g_PlayerHUDSettings[PlayerID(pPlayer)])) == HUD_NONE_SELECTED) {
-			g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[WDSP] Type [!togglehudslot] if the weapon sprite not showing / can't be selected in HUD!\n" );
-		}
-	}
+    loadout.ForceAddWeapon(szName);
+    bResult = loadout.m_ReadyState;
+    if (loadout.m_ReadyState && HUDMODE(int(g_PlayerHUDSettings[PlayerID(pPlayer)])) == HUD_NONE_SELECTED) {
+        g_PlayerFuncs.ClientPrint( pPlayer, HUD_PRINTTALK, "[WDSP] Type [!togglehudslot] if the weapon sprite not showing / can't be selected in HUD!\n" );
+    }
 	
 	return HOOK_CONTINUE; // allow pickup to proceed normally
 }
@@ -169,14 +173,10 @@ HookReturnCode WDSP_PlayerPostThink( CBasePlayer@ pPlayer )
 
 	PlayerLoadout@ loadout = GetLoadout(pPlayer);
     if (loadout !is null) {
-		if (loadout.m_ReadyState && !loadout.m_InitRefreshed) {
-			loadout.ForceAllWeaponToPosGraveyard(true);
-			loadout.m_InitRefreshed = true;
-			if (pPlayer.IsAlive()) {
-				g_Scheduler.SetTimeout("RestoreInv", 1.0f, @pPlayer);
-			}
-		}
 		if (loadout.m_ReadyState && loadout.m_HasRefreshed) {
+			if (g_Engine.time >= loadout.m_NextDropItemCheck) {
+				loadout.CheckDroppedWeaponCycle();
+			}
 			if (!loadout.m_PickupCache.isEmpty() && g_Engine.time >= loadout.m_NextCacheCleanUp) {
 				loadout.CleanCachePickup();
 			}
@@ -185,6 +185,13 @@ HookReturnCode WDSP_PlayerPostThink( CBasePlayer@ pPlayer )
 					loadout.ResetHUDClient();
 				}
 				loadout.m_SnapshotCalledCount = 0;
+			}
+		}
+		else if (loadout.m_ReadyState && !loadout.m_InitRefreshed) {
+			loadout.ForceAllWeaponToPosGraveyard(true);
+			loadout.m_InitRefreshed = true;
+			if (pPlayer.IsAlive()) {
+				g_Scheduler.SetTimeout("RestoreInv", 1.0f, @pPlayer);
 			}
 		}
 	}
