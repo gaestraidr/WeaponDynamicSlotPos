@@ -163,6 +163,7 @@ class PlayerLoadout
     bool m_InitRefreshed = false;
     bool m_HasRefreshed = false;
     float m_NextCacheCleanUp = 0.0f;
+    float m_NextDropItemCheck = 0.0f;
 
     // === GET SETTER ===
     // Gets the player associated with this object.
@@ -229,48 +230,12 @@ class PlayerLoadout
 
         ResetEdict();
     }
-    
-    void Refresh()
-    {
-        if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null)
-            return;
-
-        if (HUDMODE(int(g_PlayerHUDSettings[PlayerID(m_pPlayer)])) == HUD_ABC_ENCHANCE)
-            return;
-
-        array<string> weaponKeys = m_WeaponPos.getKeys();
-        if (weaponKeys.length() == 0)
-            return;
-
-        // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Executing refresh inventory...\n" );
-        
-        // Try to snapshot first
-        Snapshot("");
-
-        // Check Existing first
-        for (uint i = 0; i < weaponKeys.length(); i++)
-        {
-            string wepName = weaponKeys[i];
-            CBaseEntity@ pEnt = m_pPlayer.DropItem(wepName);
-            g_EntityFuncs.Remove(pEnt);
-
-            // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Removing: " + wepName + "\n" );
-        }
-
-        m_TempWeaponKeys = weaponKeys;
-        Snapshot("");
-
-        ResetEdict();
-    }
 
     void Restore()
     {
         if (HUDMODE(int(g_PlayerHUDSettings[PlayerID(m_pPlayer)])) == HUD_ABC_ENCHANCE)
             return;
 
-        // Its needed because somehow the server engine send multiple same entity weapon to client for no reason at all....
-        // Nevermind weapon like satchel needs multiple time give...
-        // dictionary seenItems;
         array<string> wpKeys = m_TempWeaponKeys;
         for (uint i = 0; i < wpKeys.length(); i++)
         {
@@ -278,74 +243,81 @@ class PlayerLoadout
                 break;
 
             string wepName = wpKeys[i];
-            // if (seenItems.exists(wepName))
-            //     continue;
-            
-            // seenItems[wepName] = true;
-            if (m_WeaponPos.exists(wepName)) {
-                // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Sending: " + wepName + "\n" );
+            if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null || g_IsMapChanging)
+                return;
 
-                ItemInfo II;
-                if (!GetItemInfoByName(wepName, II))
-                    continue;
-                
+            @item = m_pPlayer.HasNamedPlayerItem( wepName );
+            if ( item !is null )
+                continue;
+
+            if (m_WeaponPos.exists(wepName)) {
                 string packed;
                 m_WeaponPos.get(wepName, packed);
 
-                array<string> parts = packed.Split(",");
-                int slot = atoi(parts[0]);
-                int pos  = atoi(parts[1]);
-
-                SendWeaponList(wepName, II, slot, pos + SLOTS_POS_START_INDEX);
+                OnPickup(wepName, atoi(packed.Split(",")[1]));
             }
             else OnPickup(wepName);
 
-            // give weapon back
+            // Give weapon back
             m_pPlayer.SetItemPickupTimes( 0.0 );
-            m_pPlayer.GiveNamedItem( wepName );
-            m_pPlayer.SelectItem( wepName );
+            CBaseEntity@ weapItem = g_EntityFuncs.Create(
+                wepName,
+                m_pPlayer.pev.origin,
+                g_vecZero,
+                false
+            );
 
-            // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Adding: " + wepName + "\n" );
+            if (weapItem is null)
+                continue;
+
+            if ((@weapon = cast<CBasePlayerWeapon@>(weapItem)) !is null) {
+                weapon.pev.spawnflags = 1024;
+                // Prevent duplicated ammo on exhaustible
+                if ((weapon.iFlags() & ITEM_FLAG_EXHAUSTIBLE) != 0) {
+                    weapon.m_iDefaultAmmo = 0;
+                }
+                weapon.m_iDefaultSecAmmo = 0;
+                m_pPlayer.AddPlayerItem( weapon );
+                weapon.AttachToPlayer( m_pPlayer );
+                m_pPlayer.SelectItem( wepName );
+            }
+            else g_EntityFuncs.Remove(weapItem);
         }
 
         m_TempWeaponKeys.removeRange(0, m_TempWeaponKeys.length());
         ResetHUDClient();
     }
 
+    void CheckDroppedWeaponCycle()
+    {
+        dictionary curInv;
+        array<string> oldKeys = m_WeaponPos.getKeys();
+        CBasePlayerItem@ pItem;
+        for (int i = 0; i < MAX_ITEM_TYPES; i++)
+        {
+            @pItem = m_pPlayer.m_rgpPlayerItems(i);
+            while (pItem !is null)
+            {
+                string szName = pItem.pszName();
+                if (g_Ins2MenuItemList.find(szName) >= 0)
+                    curInv[szName] = true;
+
+                @pItem = GetNextItem(pItem);
+            }
+        }      
+
+        for (uint i = 0; i < oldKeys.length(); i++)
+        {
+            if (!curInv.exists(oldKeys[i])) {
+                OnDrop(oldKeys[i]);
+            }
+        }
+
+        m_NextDropItemCheck = g_Engine.time + 0.5f;
+    }
+
     void CleanCachePickup() { m_PickupCache.deleteAll(); m_NextCacheCleanUp = g_Engine.time + 0.25f; }
     bool WasInCachePickup(const string &in szWeapName) { return m_PickupCache.exists(szWeapName); }
-    bool HasWeaponQueued() { return m_TempWeaponKeys.length() > 0; }
-    void RestoreIterate()
-    {
-        if (m_pPlayer is null || !m_pPlayer.IsConnected() || m_pPlayerEdict is null)
-            return;
-
-        if (HasWeaponQueued()) {
-            string wepName = m_TempWeaponKeys[0];
-
-            if (m_WeaponPos.exists(wepName)) {
-                ItemInfo II;
-                if (GetItemInfoByName(wepName, II)) {
-                    string packed;
-                    m_WeaponPos.get(wepName, packed);
-
-                    array<string> parts = packed.Split(",");
-                    int slot = atoi(parts[0]);
-                    int pos  = atoi(parts[1]);
-
-                    SendWeaponList(wepName, II, slot, pos + SLOTS_POS_START_INDEX);
-                }
-            }
-            else OnPickup(wepName);
-
-            // give weapon back
-            m_pPlayer.SetItemPickupTimes( 0.0 );
-            m_pPlayer.GiveNamedItem( wepName );
-            m_pPlayer.SelectItem( wepName );
-
-            m_TempWeaponKeys.removeAt(0);
-        }
-    }    
 
     void ResetState() 
     { 
@@ -357,6 +329,7 @@ class PlayerLoadout
         m_InitRefreshed = false;
         m_HasRefreshed = false;
         m_NextCacheCleanUp = 0.0f;
+        m_NextDropItemCheck = 0.0f;
     }
 
     void Reset(CBasePlayer@ pPlayer)
@@ -378,7 +351,6 @@ class PlayerLoadout
         if (HUDMODE(int(g_PlayerHUDSettings[PlayerID(m_pPlayer)])) == HUD_ABC_ENCHANCE)
             return;
 
-        // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Snapshotting...\n" );
         // snapshot inventory
         dictionary curInv;
         for (int i = 0; i < MAX_ITEM_TYPES; i++)
@@ -423,7 +395,6 @@ class PlayerLoadout
 
         if (invChanged) {
             m_SnapshotCalledCount++;
-            // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Snapshot Called Count: " + m_SnapshotCalledCount + "\n" );
         }
     }
 
@@ -486,7 +457,6 @@ class PlayerLoadout
 
     void ForceAllWeaponToPosGraveyard(bool forceOwnedWeap = false)
     {
-        // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Sending GRAVEYARD list...\n" );
         if (HUDMODE(int(g_PlayerHUDSettings[PlayerID(m_pPlayer)])) == HUD_ABC_ENCHANCE)
             return;
 
@@ -499,7 +469,6 @@ class PlayerLoadout
             ItemInfo info;
             if (GetItemInfoByName(szName, info)) {
                 SendWeaponList(szName, info, info.iSlot, GRAVEYARD_POS_INDEX);
-                // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Throwing [" + szName + "] to pos GRAVEYARD...\n" );
             }
         }
 
@@ -534,7 +503,6 @@ class PlayerLoadout
                     msg.WriteByte(II.iFlags | 1);
                 msg.End();
             }
-            // g_PlayerFuncs.ClientPrint( m_pPlayer, HUD_PRINTTALK, "Throwing [" + szName + "] to pos GRAVEYARD...\n" );
         }
     }
 
@@ -552,7 +520,7 @@ class PlayerLoadout
         m_NewlyCreated = false;
     }
 
-    private void OnPickup(const string &in szName)
+    private void OnPickup(const string &in szName, const int initialPos = 0)
     {
         ItemInfo II;
         if (!GetItemInfoByName(szName, II))
@@ -560,7 +528,7 @@ class PlayerLoadout
 
         // The preferred slot for this item
         int preferredSlot = II.iSlot;
-        dictionary newLocation = AllocPos(preferredSlot);
+        dictionary newLocation = AllocPos(preferredSlot, initialPos);
         if (int(newLocation['pos']) < 0)
         {
             // No free position found on every slot, damn this guy saving arsenal for doomsday
@@ -602,7 +570,6 @@ class PlayerLoadout
 
     private void ResetEdict()
     {
-        m_WeaponPos.deleteAll();
         m_FreePos.resize(MAX_ITEM_TYPES);
         for (int slot = 0; slot < MAX_ITEM_TYPES; slot++)
         {
@@ -612,7 +579,7 @@ class PlayerLoadout
         }
     }
 
-    private dictionary AllocPos(int initialSlot)
+    private dictionary AllocPos(int initialSlot, int initialPos = 0)
     {
         // Create a dictionary to return both the slot and position.
         dictionary result;
@@ -626,7 +593,7 @@ class PlayerLoadout
             int currentSlot = (initialSlot + i) % MAX_ITEM_TYPES;
 
             // The inner loop checks for a free position within the current slot.
-            for (int pos = 0; pos < MAX_ITEM_SLOTS_POS; pos++)
+            for (int pos = initialPos; pos < MAX_ITEM_SLOTS_POS; pos++)
             {
                 // If we find a free position...
                 if (!m_FreePos[currentSlot][pos])
@@ -640,6 +607,9 @@ class PlayerLoadout
                     return result;
                 }
             }
+
+            // Set back initial pos to zero to iterate thru next slot
+            initialPos = 0;
         }
 
         // If the outer loop completes, it means we have checked every position
